@@ -49,8 +49,9 @@ This is a human-facing UI feature only — it is not a WebMCP tool and is never 
 
 ## Setup
 
-Open `index.html` — no build step, no dependencies. Deployed live at: **[live URL here]**
+## Setup
 
+Open `index.html` — no build step, no dependencies. Deployed live at: **https://paper-bridge-oo49.vercel.app**
 ## Demo
 
 [video link here]
