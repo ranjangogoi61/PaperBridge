@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PaperBridge — Turn confusing forms into conversations</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --card: #171a21;
+    --border: #2a2e38;
+    --text: #e8e9ed;
+    --muted: #8b8f9c;
+    --accent: #4f8cff;
+    --accent-soft: rgba(79,140,255,0.15);
+    --success: #3ecf8e;
+    --success-soft: rgba(62,207,142,0.15);
+    --warn: #f5a623;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 20px 16px 60px;
+    max-width: 480px;
+    margin: 0 auto;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .tagline { color: var(--muted); font-size: 13px; margin: 0 0 20px; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+  .card h2 { font-size: 14px; margin: 0 0 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  .field-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 12px;
+    border-radius: 8px;
+    margin-bottom: 6px;
+    background: transparent;
+    border: 1px solid transparent;
+    transition: all 0.4s ease;
+  }
+  .field-row .label { color: var(--muted); font-size: 13px; }
+  .field-row .value { font-size: 14px; font-weight: 500; }
+  .field-row.empty .value { color: var(--muted); font-style: italic; }
+  .field-row.active {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-soft);
+  }
+  .field-row.filled {
+    background: rgba(62,207,142,0.08);
+  }
+  #status {
+    font-size: 13px;
+    color: var(--muted);
+    margin-bottom: 12px;
+    min-height: 18px;
+  }
+  #status.ok { color: var(--success); }
+  #status.err { color: #ff6b6b; }
+  .log {
+    font-family: "SF Mono", Consolas, monospace;
+    font-size: 12px;
+    color: var(--muted);
+    max-height: 180px;
+    overflow-y: auto;
+  }
+  .log-line { padding: 4px 0; border-bottom: 1px solid var(--border); }
+  .log-line:last-child { border-bottom: none; }
+  .log-line .t { color: var(--accent); margin-right: 6px; }
+  .approval-box {
+    display: none;
+    text-align: center;
+  }
+  .approval-box.show { display: block; }
+  .approval-box p { font-size: 14px; margin: 0 0 14px; }
+  .btn-row { display: flex; gap: 10px; justify-content: center; }
+  button {
+    border: none;
+    border-radius: 8px;
+    padding: 10px 20px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .btn-yes { background: var(--success); color: #0f1115; }
+  .btn-no { background: var(--border); color: var(--text); }
+  .done-badge {
+    display: none;
+    text-align: center;
+    color: var(--success);
+    font-weight: 600;
+    padding: 10px;
+  }
+  .done-badge.show { display: block; }
+  .missing-badge {
+    display: none;
+    color: var(--warn);
+    font-size: 13px;
+    text-align: center;
+  }
+  .missing-badge.show { display: block; }
+</style>
+</head>
+<body>
+
+  <h1>PaperBridge</h1>
+  <p class="tagline">Turn confusing forms into conversations.</p>
+
+  <div class="card">
+    <h2>Application Status</h2>
+    <div id="status">Waiting for agent to start a form...</div>
+    <button onclick="resetDemo()" style="margin-top:10px; background:var(--border); color:var(--text); font-size:12px; padding:6px 12px;">Reset Demo</button>
+  </div>
+
+  <div class="card">
+    <h2>PAN Application — Form 49A</h2>
+    <div class="field-row empty" data-field="full_name">
+      <span class="label">Full Name</span>
+      <span class="value">—</span>
+    </div>
+    <div class="field-row empty" data-field="father_name">
+      <span class="label">Father's Name</span>
+      <span class="value">—</span>
+    </div>
+    <div class="field-row empty" data-field="dob">
+      <span class="label">Date of Birth</span>
+      <span class="value">—</span>
+    </div>
+    <div class="field-row empty" data-field="address">
+      <span class="label">Address</span>
+      <span class="value">—</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="missing-badge" id="missingBadge"></div>
+    <div class="approval-box" id="approvalBox">
+      <p>All fields filled. Submit this application?</p>
+      <div class="btn-row">
+        <button class="btn-yes" onclick="humanApprove(true)">Yes, Submit</button>
+        <button class="btn-no" onclick="humanApprove(false)">No, Cancel</button>
+      </div>
+    </div>
+    <div class="done-badge" id="doneBadge">✓ Application approved and submitted (demo)</div>
+  </div>
+
+  <div class="card">
+    <h2>Agent Activity Log</h2>
+    <div class="log" id="log">
+      <div class="log-line" style="color:var(--muted); font-style:italic;">No activity yet.</div>
+    </div>
+  </div>
+
+<script>
+// ---------- State ----------
+let state = null; // { form_id, application_type, fields: {}, approved, activity_log: [] }
+
+function nowStr() {
+  const d = new Date();
+  return d.toTimeString().slice(0,5);
+}
+
+function log(msg) {
+  const el = document.getElementById('log');
+  if (el.children.length === 1 && el.children[0].textContent === 'No activity yet.') {
+    el.innerHTML = '';
+  }
+  const line = document.createElement('div');
+  line.className = 'log-line';
+  line.innerHTML = `<span class="t">${nowStr()}</span>${msg}`;
+  el.prepend(line);
+  if (state) {
+    state.activity_log.push({ time: nowStr(), action: msg });
+    localStorage.setItem('paperbridge_state', JSON.stringify(state));
+  }
+}
+
+function setStatus(msg, kind) {
+  const el = document.getElementById('status');
+  el.textContent = msg;
+  el.className = kind || '';
+}
+
+function highlightField(fieldName, value) {
+  const row = document.querySelector(`.field-row[data-field="${fieldName}"]`);
+  if (!row) return;
+  row.querySelector('.value').textContent = value;
+  row.classList.remove('empty');
+  row.classList.add('active');
+  setTimeout(() => {
+    row.classList.remove('active');
+    row.classList.add('filled');
+  }, 600);
+}
+
+// ---------- WebMCP Tool Registration ----------
+function registerTools() {
+  if (!document.modelContext) {
+    setStatus('document.modelContext NOT found on this browser/agent environment.', 'err');
+    return false;
+  }
+
+  document.modelContext.registerTool({
+    name: "start_form",
+    description: "Initializes a new PAN application form session. Call this first before filling any fields.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        application_type: { type: "string", enum: ["new_pan", "minor_to_major"] }
+      },
+      required: ["application_type"]
+    },
+    execute: async (input) => {
+      const form_id = "form_" + Math.random().toString(36).slice(2, 8);
+      state = {
+        form_id,
+        application_type: input.application_type,
+        fields: { full_name: "", father_name: "", dob: "", address: "" },
+        approved: false,
+        activity_log: []
+      };
+      localStorage.setItem('paperbridge_state', JSON.stringify(state));
+      log(`start_form called → ${form_id} (${input.application_type})`);
+      setStatus(`Form started: ${form_id}`, 'ok');
+      return {
+        content: [{ type: "text", text: JSON.stringify({ form_id }) }],
+        structuredContent: { form_id }
+      };
+    }
+  });
+
+  document.modelContext.registerTool({
+    name: "fill_field",
+    description: "Fills one field on the active PAN application form.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        form_id: { type: "string" },
+        field_name: { type: "string", enum: ["full_name", "father_name", "dob", "address"] },
+        value: { type: "string" }
+      },
+      required: ["form_id", "field_name", "value"]
+    },
+    execute: async (input) => {
+      if (!state || state.form_id !== input.form_id) {
+        log(`fill_field FAILED — no active form matching ${input.form_id}`);
+        return { content: [{ type: "text", text: "Error: no active form. Call start_form first." }] };
+      }
+      state.fields[input.field_name] = input.value;
+      localStorage.setItem('paperbridge_state', JSON.stringify(state));
+      highlightField(input.field_name, input.value);
+      log(`fill_field → ${input.field_name} = "${input.value}"`);
+      return {
+        content: [{ type: "text", text: JSON.stringify({ field_name: input.field_name, status: "filled" }) }],
+        structuredContent: { field_name: input.field_name, status: "filled" }
+      };
+    }
+  });
+
+  document.modelContext.registerTool({
+    name: "validate_form",
+    description: "Checks all required fields are filled and requests human approval before submission.",
+    inputSchema: {
+      type: "object",
+      properties: { form_id: { type: "string" } },
+      required: ["form_id"]
+    },
+    execute: async (input) => {
+      if (!state || state.form_id !== input.form_id) {
+        return { content: [{ type: "text", text: "Error: no active form." }] };
+      }
+      const missing = Object.entries(state.fields)
+        .filter(([k, v]) => !v || v.trim() === "")
+        .map(([k]) => k);
+
+      log(`validate_form called → ${missing.length === 0 ? "all fields complete" : missing.length + " field(s) missing"}`);
+
+      if (missing.length > 0) {
+        document.getElementById('missingBadge').textContent = "Missing: " + missing.join(", ");
+        document.getElementById('missingBadge').classList.add('show');
+        setStatus('Validation failed — missing fields', 'err');
+        return {
+          content: [{ type: "text", text: JSON.stringify({ ready_for_approval: false, missing_fields: missing }) }],
+          structuredContent: { form_id: input.form_id, ready_for_approval: false, missing_fields: missing }
+        };
+      }
+
+      document.getElementById('missingBadge').classList.remove('show');
+      document.getElementById('approvalBox').classList.add('show');
+      setStatus('Waiting for human approval...', 'ok');
+      return {
+        content: [{ type: "text", text: JSON.stringify({ ready_for_approval: true, missing_fields: [] }) }],
+        structuredContent: { form_id: input.form_id, ready_for_approval: true, missing_fields: [] }
+      };
+    }
+  });
+
+  return true;
+}
+
+// ---------- Human approval (manual, not agent-callable) ----------
+function humanApprove(yes) {
+  document.getElementById('approvalBox').classList.remove('show');
+  if (yes) {
+    state.approved = true;
+    localStorage.setItem('paperbridge_state', JSON.stringify(state));
+    log('Human approved — application submitted (demo)');
+    document.getElementById('doneBadge').classList.add('show');
+    setStatus('Approved & submitted.', 'ok');
+  } else {
+    log('Human declined — application not submitted');
+    setStatus('Declined by human.', 'err');
+  }
+}
+
+// ---------- Reset ----------
+function resetDemo() {
+  localStorage.removeItem('paperbridge_state');
+  location.reload();
+}
+
+// ---------- Init ----------
+window.addEventListener('DOMContentLoaded', () => {
+  const ok = registerTools();
+  if (ok) {
+    setStatus('Tools registered. Ready — tell the agent your goal (e.g. "Help me fill a new PAN application for <name>...").', 'ok');
+  }
+});
+</script>
+</body>
+</html>
