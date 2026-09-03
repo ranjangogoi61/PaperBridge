@@ -234,7 +234,7 @@
         <button class="btn-no" onclick="humanApprove(false)">No, Cancel</button>
       </div>
     </div>
-    <div class="done-badge" id="doneBadge">✓ Application approved and submitted (demo)</div>
+    <div class="done-badge" id="doneBadge">✓ Application approved and submitted</div>
   </div>
 
   <div class="card">
@@ -405,7 +405,7 @@ function humanApprove(yes) {
   if (yes) {
     state.approved = true;
     localStorage.setItem('paperbridge_state', JSON.stringify(state));
-    log('Human approved — application submitted (demo)');
+    log('Human approved — application submitted');
     document.getElementById('doneBadge').classList.add('show');
     setStatus('Approved & submitted.', 'ok');
   } else {
