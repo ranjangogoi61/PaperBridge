@@ -33,7 +33,16 @@ The agent performs all reasoning (deciding field values from natural language); 
 **Verification note:** All three tools were independently verified via automated DOM simulation — registration, sequential execution, `form_id` chaining, and live UI updates all confirmed working correctly. Live execution inside a WebMCP-enabled agent browser could not be independently verified from available testing devices at submission time — WebMCP remains an early-preview browser feature with limited current device/app support.
 
 ## Architecture
+## Operator History (for shared-device use, e.g. a service center)
 
+Since one device may be used by an operator to help multiple people (e.g. a cyber café or common service center filling PAN forms for different customers), PaperBridge keeps a searchable local history of past applications:
+
+- Every application is automatically saved to `localStorage` as it progresses
+- A history drawer (☰ icon, top-right) lists all past applications with name, status, and timestamp
+- Search filters by applicant name
+- Tapping a past entry reloads it — fields, activity log, and approval status all restore exactly as they were
+
+This is a human-facing UI feature only — it is not a WebMCP tool and is never called by the agent. It exists so an operator can pick up where a previous customer's session left off, without losing prior work.
 - Vanilla HTML/CSS/JavaScript — no framework, no backend
 - State: in-memory + `localStorage` (single-session demo by design)
 - Deployed on Vercel
