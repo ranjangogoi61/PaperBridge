@@ -1,4 +1,4 @@
- <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -109,9 +109,91 @@
     text-align: center;
   }
   .missing-badge.show { display: block; }
+
+  /* History drawer */
+  .hamburger {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    z-index: 20;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 18px;
+  }
+  .drawer-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 25;
+  }
+  .drawer-overlay.show { display: block; }
+  .drawer {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 78%;
+    max-width: 320px;
+    background: var(--card);
+    border-left: 1px solid var(--border);
+    z-index: 30;
+    transform: translateX(100%);
+    transition: transform 0.25s ease;
+    padding: 16px;
+    overflow-y: auto;
+  }
+  .drawer.show { transform: translateX(0); }
+  .drawer h2 { font-size: 15px; margin: 0 0 12px; }
+  .drawer-search {
+    width: 100%;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 13px;
+    margin-bottom: 12px;
+  }
+  .history-item {
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    margin-bottom: 8px;
+    cursor: pointer;
+  }
+  .history-item:active { background: var(--accent-soft); }
+  .history-item .hname { font-size: 13px; font-weight: 600; }
+  .history-item .hmeta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .history-empty { color: var(--muted); font-size: 13px; font-style: italic; }
+  .drawer-close {
+    background: var(--border);
+    color: var(--text);
+    border: none;
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 12px;
+    margin-bottom: 14px;
+  }
 </style>
 </head>
 <body>
+
+  <div class="hamburger" onclick="toggleDrawer(true)">☰</div>
+  <div class="drawer-overlay" id="drawerOverlay" onclick="toggleDrawer(false)"></div>
+  <div class="drawer" id="drawer">
+    <button class="drawer-close" onclick="toggleDrawer(false)">✕ Close</button>
+    <h2>Past Applications</h2>
+    <input type="text" class="drawer-search" id="drawerSearch" placeholder="Search by name..." oninput="renderHistory()">
+    <div id="historyList"></div>
+  </div>
 
   <h1>PaperBridge</h1>
   <p class="tagline">Turn confusing forms into conversations.</p>
@@ -119,7 +201,8 @@
   <div class="card">
     <h2>Application Status</h2>
     <div id="status">Waiting for agent to start a form...</div>
-    <button onclick="resetDemo()" style="margin-top:10px; background:var(--border); color:var(--text); font-size:12px; padding:6px 12px;">Reset Demo</button>
+    <button onclick="resetDemo()" style="margin-top:10px; background:var(--border); color:var(--text); font-size:12px; padding:6px 12px;">Reset</button>
+    <button onclick="simulateAgentCall()" style="margin-top:10px; margin-left:8px; background:var(--accent); color:#fff; font-size:12px; padding:6px 12px;">Simulate Agent Call</button>
   </div>
 
   <div class="card">
@@ -182,6 +265,7 @@ function log(msg) {
   if (state) {
     state.activity_log.push({ time: nowStr(), action: msg });
     localStorage.setItem('paperbridge_state', JSON.stringify(state));
+    saveToHistory();
   }
 }
 
@@ -204,107 +288,114 @@ function highlightField(fieldName, value) {
 }
 
 // ---------- WebMCP Tool Registration ----------
+let registeredTools = {};
+
 function registerTools() {
+  const toolDefs = [
+    {
+      name: "start_form",
+      description: "Initializes a new PAN application form session. Call this first before filling any fields.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          application_type: { type: "string", enum: ["new_pan", "minor_to_major"] }
+        },
+        required: ["application_type"]
+      },
+      execute: async (input) => {
+        const form_id = "form_" + Math.random().toString(36).slice(2, 8);
+        state = {
+          form_id,
+          application_type: input.application_type,
+          fields: { full_name: "", father_name: "", dob: "", address: "" },
+          approved: false,
+          activity_log: []
+        };
+        localStorage.setItem('paperbridge_state', JSON.stringify(state));
+        log(`start_form called → ${form_id} (${input.application_type})`);
+        setStatus(`Form started: ${form_id}`, 'ok');
+        return {
+          content: [{ type: "text", text: JSON.stringify({ form_id }) }],
+          structuredContent: { form_id }
+        };
+      }
+    },
+    {
+      name: "fill_field",
+      description: "Fills one field on the active PAN application form.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          form_id: { type: "string" },
+          field_name: { type: "string", enum: ["full_name", "father_name", "dob", "address"] },
+          value: { type: "string" }
+        },
+        required: ["form_id", "field_name", "value"]
+      },
+      execute: async (input) => {
+        if (!state || state.form_id !== input.form_id) {
+          log(`fill_field FAILED — no active form matching ${input.form_id}`);
+          return { content: [{ type: "text", text: "Error: no active form. Call start_form first." }] };
+        }
+        state.fields[input.field_name] = input.value;
+        localStorage.setItem('paperbridge_state', JSON.stringify(state));
+        highlightField(input.field_name, input.value);
+        log(`fill_field → ${input.field_name} = "${input.value}"`);
+        return {
+          content: [{ type: "text", text: JSON.stringify({ field_name: input.field_name, status: "filled" }) }],
+          structuredContent: { field_name: input.field_name, status: "filled" }
+        };
+      }
+    },
+    {
+      name: "validate_form",
+      description: "Checks all required fields are filled and requests human approval before submission.",
+      inputSchema: {
+        type: "object",
+        properties: { form_id: { type: "string" } },
+        required: ["form_id"]
+      },
+      execute: async (input) => {
+        if (!state || state.form_id !== input.form_id) {
+          return { content: [{ type: "text", text: "Error: no active form." }] };
+        }
+        const missing = Object.entries(state.fields)
+          .filter(([k, v]) => !v || v.trim() === "")
+          .map(([k]) => k);
+
+        log(`validate_form called → ${missing.length === 0 ? "all fields complete" : missing.length + " field(s) missing"}`);
+
+        if (missing.length > 0) {
+          document.getElementById('missingBadge').textContent = "Missing: " + missing.join(", ");
+          document.getElementById('missingBadge').classList.add('show');
+          setStatus('Validation failed — missing fields', 'err');
+          return {
+            content: [{ type: "text", text: JSON.stringify({ ready_for_approval: false, missing_fields: missing }) }],
+            structuredContent: { form_id: input.form_id, ready_for_approval: false, missing_fields: missing }
+          };
+        }
+
+        document.getElementById('missingBadge').classList.remove('show');
+        document.getElementById('approvalBox').classList.add('show');
+        setStatus('Waiting for human approval...', 'ok');
+        return {
+          content: [{ type: "text", text: JSON.stringify({ ready_for_approval: true, missing_fields: [] }) }],
+          structuredContent: { form_id: input.form_id, ready_for_approval: true, missing_fields: [] }
+        };
+      }
+    }
+  ];
+
+  // Always keep a local reference so the on-page "Simulate" button works
+  // regardless of whether the browser exposes document.modelContext.
+  toolDefs.forEach(t => { registeredTools[t.name] = t; });
+
   if (!document.modelContext) {
-    setStatus('document.modelContext NOT found on this browser/agent environment.', 'err');
+    setStatus('document.modelContext NOT found on this browser/agent environment. (Tool logic still available via "Simulate Agent Call" below.)', 'err');
     return false;
   }
 
-  document.modelContext.registerTool({
-    name: "start_form",
-    description: "Initializes a new PAN application form session. Call this first before filling any fields.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        application_type: { type: "string", enum: ["new_pan", "minor_to_major"] }
-      },
-      required: ["application_type"]
-    },
-    execute: async (input) => {
-      const form_id = "form_" + Math.random().toString(36).slice(2, 8);
-      state = {
-        form_id,
-        application_type: input.application_type,
-        fields: { full_name: "", father_name: "", dob: "", address: "" },
-        approved: false,
-        activity_log: []
-      };
-      localStorage.setItem('paperbridge_state', JSON.stringify(state));
-      log(`start_form called → ${form_id} (${input.application_type})`);
-      setStatus(`Form started: ${form_id}`, 'ok');
-      return {
-        content: [{ type: "text", text: JSON.stringify({ form_id }) }],
-        structuredContent: { form_id }
-      };
-    }
-  });
-
-  document.modelContext.registerTool({
-    name: "fill_field",
-    description: "Fills one field on the active PAN application form.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        form_id: { type: "string" },
-        field_name: { type: "string", enum: ["full_name", "father_name", "dob", "address"] },
-        value: { type: "string" }
-      },
-      required: ["form_id", "field_name", "value"]
-    },
-    execute: async (input) => {
-      if (!state || state.form_id !== input.form_id) {
-        log(`fill_field FAILED — no active form matching ${input.form_id}`);
-        return { content: [{ type: "text", text: "Error: no active form. Call start_form first." }] };
-      }
-      state.fields[input.field_name] = input.value;
-      localStorage.setItem('paperbridge_state', JSON.stringify(state));
-      highlightField(input.field_name, input.value);
-      log(`fill_field → ${input.field_name} = "${input.value}"`);
-      return {
-        content: [{ type: "text", text: JSON.stringify({ field_name: input.field_name, status: "filled" }) }],
-        structuredContent: { field_name: input.field_name, status: "filled" }
-      };
-    }
-  });
-
-  document.modelContext.registerTool({
-    name: "validate_form",
-    description: "Checks all required fields are filled and requests human approval before submission.",
-    inputSchema: {
-      type: "object",
-      properties: { form_id: { type: "string" } },
-      required: ["form_id"]
-    },
-    execute: async (input) => {
-      if (!state || state.form_id !== input.form_id) {
-        return { content: [{ type: "text", text: "Error: no active form." }] };
-      }
-      const missing = Object.entries(state.fields)
-        .filter(([k, v]) => !v || v.trim() === "")
-        .map(([k]) => k);
-
-      log(`validate_form called → ${missing.length === 0 ? "all fields complete" : missing.length + " field(s) missing"}`);
-
-      if (missing.length > 0) {
-        document.getElementById('missingBadge').textContent = "Missing: " + missing.join(", ");
-        document.getElementById('missingBadge').classList.add('show');
-        setStatus('Validation failed — missing fields', 'err');
-        return {
-          content: [{ type: "text", text: JSON.stringify({ ready_for_approval: false, missing_fields: missing }) }],
-          structuredContent: { form_id: input.form_id, ready_for_approval: false, missing_fields: missing }
-        };
-      }
-
-      document.getElementById('missingBadge').classList.remove('show');
-      document.getElementById('approvalBox').classList.add('show');
-      setStatus('Waiting for human approval...', 'ok');
-      return {
-        content: [{ type: "text", text: JSON.stringify({ ready_for_approval: true, missing_fields: [] }) }],
-        structuredContent: { form_id: input.form_id, ready_for_approval: true, missing_fields: [] }
-      };
-    }
-  });
-
+  toolDefs.forEach(t => document.modelContext.registerTool(t));
   return true;
 }
 
@@ -321,6 +412,117 @@ function humanApprove(yes) {
     log('Human declined — application not submitted');
     setStatus('Declined by human.', 'err');
   }
+}
+
+// ---------- Simulate (for demo/video purposes — manually invokes the same tool functions) ----------
+async function simulateAgentCall() {
+  const startBtn = document.querySelector('button[onclick="simulateAgentCall()"]');
+  startBtn.disabled = true;
+  startBtn.textContent = "Running...";
+
+  const tools = registeredTools; // captured at registration time
+  const wait = (ms) => new Promise(r => setTimeout(r, ms));
+
+  const r1 = await tools.start_form.execute({ application_type: "new_pan" });
+  const form_id = JSON.parse(r1.content[0].text).form_id;
+  await wait(500);
+
+  const demoFields = {
+    full_name: "Ranjan Gogoi",
+    father_name: "Deben Gogoi",
+    dob: "2008-03-15",
+    address: "Assam, India"
+  };
+  for (const [k, v] of Object.entries(demoFields)) {
+    await tools.fill_field.execute({ form_id, field_name: k, value: v });
+    await wait(600);
+  }
+
+  await tools.validate_form.execute({ form_id });
+  startBtn.disabled = false;
+  startBtn.textContent = "Simulate Agent Call";
+}
+
+// ---------- History Drawer ----------
+function toggleDrawer(show) {
+  document.getElementById('drawer').classList.toggle('show', show);
+  document.getElementById('drawerOverlay').classList.toggle('show', show);
+  if (show) renderHistory();
+}
+
+function getAllForms() {
+  try {
+    return JSON.parse(localStorage.getItem('paperbridge_all_forms') || '[]');
+  } catch (e) { return []; }
+}
+
+function saveToHistory() {
+  if (!state) return;
+  let all = getAllForms();
+  const idx = all.findIndex(f => f.form_id === state.form_id);
+  const entry = { ...state, saved_at: new Date().toISOString() };
+  if (idx >= 0) all[idx] = entry; else all.unshift(entry);
+  localStorage.setItem('paperbridge_all_forms', JSON.stringify(all));
+}
+
+function renderHistory() {
+  const q = (document.getElementById('drawerSearch').value || '').toLowerCase().trim();
+  const all = getAllForms();
+  const filtered = q
+    ? all.filter(f => (f.fields.full_name || '').toLowerCase().includes(q))
+    : all;
+
+  const container = document.getElementById('historyList');
+  if (filtered.length === 0) {
+    container.innerHTML = '<div class="history-empty">No saved applications yet.</div>';
+    return;
+  }
+  container.innerHTML = filtered.map((f, i) => {
+    const name = f.fields.full_name || '(no name yet)';
+    const status = f.approved ? 'Approved' : 'In progress';
+    const d = new Date(f.saved_at);
+    const when = d.toLocaleDateString() + ' ' + d.toTimeString().slice(0,5);
+    return `<div class="history-item" onclick="loadHistoryItem('${f.form_id}')">
+      <div class="hname">${name}</div>
+      <div class="hmeta">${status} · ${when} · ${f.form_id}</div>
+    </div>`;
+  }).join('');
+}
+
+function loadHistoryItem(form_id) {
+  const all = getAllForms();
+  const found = all.find(f => f.form_id === form_id);
+  if (!found) return;
+  state = JSON.parse(JSON.stringify(found));
+  localStorage.setItem('paperbridge_state', JSON.stringify(state));
+
+  // Re-render fields
+  Object.entries(state.fields).forEach(([k, v]) => {
+    const row = document.querySelector(`.field-row[data-field="${k}"]`);
+    if (!row) return;
+    row.querySelector('.value').textContent = v || '—';
+    row.classList.remove('empty', 'active');
+    row.classList.toggle('filled', !!v);
+  });
+
+  // Re-render log
+  const logEl = document.getElementById('log');
+  logEl.innerHTML = state.activity_log.length
+    ? state.activity_log.slice().reverse().map(l => `<div class="log-line"><span class="t">${l.time}</span>${l.action}</div>`).join('')
+    : '<div class="log-line" style="color:var(--muted); font-style:italic;">No activity yet.</div>';
+
+  // Re-render approval/done state
+  document.getElementById('approvalBox').classList.remove('show');
+  document.getElementById('doneBadge').classList.toggle('show', !!state.approved);
+  document.getElementById('missingBadge').classList.remove('show');
+
+  const missing = Object.values(state.fields).some(v => !v);
+  if (!state.approved && !missing) {
+    document.getElementById('approvalBox').classList.add('show');
+  }
+
+  setStatus(`Loaded application: ${state.fields.full_name || state.form_id}`, 'ok');
+  toggleDrawer(false);
 }
 
 // ---------- Reset ----------
