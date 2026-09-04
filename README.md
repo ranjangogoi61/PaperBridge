@@ -1,4 +1,4 @@
-PaperBridge
+##PaperBridge
 Turn confusing forms into conversations.
 Problem
 Government and financial forms — PAN, Aadhaar, Voter ID, Passport, Ration Card, Ayushman Card, Driving Licence, bank accounts, LIC policies, visas — are dense, jargon-heavy, and intimidating, especially for first-time applicants unfamiliar with formal English or bureaucratic language. I've filled out this exact kind of form for my own PAN card update, and for my brother's, from a remote village in Assam where digital form-filling isn't second nature. The usual process means manually decoding unfamiliar fields alone, often making errors — and for someone running a shared community device (like a cyber café), doing this for dozens of different people and document types every day.
